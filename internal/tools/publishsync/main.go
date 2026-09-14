@@ -16,8 +16,8 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/4jawaly/identity-gateway/internal/config"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	usersync "github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
 	"github.com/4jawaly/identity-gateway/pkg/queue"
 )
 
@@ -39,7 +39,7 @@ func run(sub, parents, status string) error {
 	defer cancel()
 
 	pub, err := queue.NewPublisher(ctx, cfg.Queue.URL, cfg.Queue.Exchange,
-		[]queue.Binding{sync_user.Binding}, queue.WithPublisherLogger(zerolog.Nop()))
+		[]queue.Binding{usersync.Binding}, queue.WithPublisherLogger(zerolog.Nop()))
 	if err != nil {
 		return err
 	}
@@ -49,18 +49,18 @@ func run(sub, parents, status string) error {
 	if parents != "" {
 		parentSubs = strings.Split(parents, ",")
 	}
-	p := dto.UserSyncPayload{
+	p := userdto.UserSyncPayload{
 		Sub: sub, Email: sub + "@dev.local", Nickname: "dev " + sub,
 		Roles: []string{"USER"}, Issuer: cfg.Zitadel.Issuer,
-		MainAccount:  dto.MainAccountPayload{StatusName: status, AccountID: "1"},
+		MainAccount:  userdto.MainAccountPayload{StatusName: status, AccountID: "1"},
 		SubAccountOf: parentSubs,
 		Origin:       json.RawMessage(`{"sub":"` + sub + `","dev":true}`),
 	}
-	e, err := queue.NewEnvelope(sync_user.EventType, sync_user.SchemaVersion, cfg.App.Producer(), p)
+	e, err := queue.NewEnvelope(usersync.EventType, usersync.SchemaVersion, cfg.App.Producer(), p)
 	if err != nil {
 		return err
 	}
-	if err := pub.Publish(ctx, sync_user.EventType, e); err != nil {
+	if err := pub.Publish(ctx, usersync.EventType, e); err != nil {
 		return err
 	}
 	fmt.Println("published", e.EventID, "sub", sub, "hash", p.Hash())

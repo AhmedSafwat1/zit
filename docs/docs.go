@@ -905,7 +905,7 @@ const docTemplate = `{
                     "example": "TOKEN_INACTIVE"
                 },
                 "debug": {
-                    "description": "Debug is present only when APP_DEBUG=true. Never enable in production.",
+                    "description": "Debug is present only for 5xx responses when APP_DEBUG=true. Never enable in production.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_4jawaly_identity-gateway_internal_response.DebugInfo"

@@ -13,24 +13,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/4jawaly/identity-gateway/internal/middleware"
-	cmocks "github.com/4jawaly/identity-gateway/internal/mocks"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/handlers"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/routes"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	userhandler "github.com/4jawaly/identity-gateway/internal/modules/user/handlers"
+	userroute "github.com/4jawaly/identity-gateway/internal/modules/user/routes"
 	"github.com/4jawaly/identity-gateway/internal/modules/user/tests/mocks"
 	"github.com/4jawaly/identity-gateway/internal/response"
-	"github.com/4jawaly/identity-gateway/internal/types"
 )
 
-func newRouter(t *testing.T) (*gin.Engine, *mocks.UserService, *cmocks.Authenticator) {
+func newRouter(t *testing.T) (*gin.Engine, *mocks.UserService) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	svc := mocks.NewUserService(t)
-	authn := cmocks.NewAuthenticator(t)
 	r := gin.New()
 	r.Use(middleware.RequestID(), middleware.Recovery())
-	routes.Register(r.Group("/api/v1"), handlers.NewUserHandler(svc), authn, true)
-	return r, svc, authn
+	userroute.Register(r.Group("/api/v1"), userhandler.NewUserHandler(svc))
+	return r, svc
 }
 
 func do(t *testing.T, r http.Handler, method, path, bearer string) (*httptest.ResponseRecorder, response.Envelope) {
@@ -47,18 +44,6 @@ func do(t *testing.T, r http.Handler, method, path, bearer string) (*httptest.Re
 	assert.NotContains(t, rec.Body.String(), `"request_id"`)
 	assert.NotContains(t, rec.Body.String(), `"timestamp"`)
 	return rec, env
-}
-
-func adminPrincipal() types.AuthUser {
-	return types.AuthUser{Sub: "355646255235338042", Roles: []string{"ADMIN"}, IsAdmin: true}
-}
-
-func userPrincipal() types.AuthUser {
-	return types.AuthUser{Sub: "355646999999999999", Roles: []string{"USER"}}
-}
-
-func sampleUser() dto.UserResponse {
-	return dto.UserResponse{Sub: "355646255235338042", Email: "admin@rawazin.example", Roles: []string{"ADMIN"}, IsAdmin: true, MainAccount: dto.MainAccountPayload{StatusName: "Active"}}
 }
 
 func TestUserHandler_Introspect(t *testing.T) {
@@ -102,7 +87,7 @@ func TestUserHandler_Introspect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, svc, _ := newRouter(t)
+			r, svc := newRouter(t)
 			tt.setup(svc)
 			rec, env := do(t, r, http.MethodPost, "/api/v1/users/introspect", tt.bearer)
 			assert.Equal(t, tt.wantStatus, rec.Code)
@@ -129,109 +114,6 @@ func TestUserHandler_Introspect(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestUserHandler_AuthenticatedReads(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		method     string
-		path       string
-		bearer     string
-		setup      func(svc *mocks.UserService, a *cmocks.Authenticator)
-		wantStatus int
-		wantCode   string
-	}{
-		// /users/me
-		{name: "me without token is TOKEN_MISSING", method: "GET", path: "/api/v1/users/me", setup: func(*mocks.UserService, *cmocks.Authenticator) {}, wantStatus: 401, wantCode: "TOKEN_MISSING"},
-		{name: "me with inactive token is TOKEN_INACTIVE", method: "GET", path: "/api/v1/users/me", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(types.AuthUser{}, response.ErrTokenInactive).Once()
-		}, wantStatus: 401, wantCode: "TOKEN_INACTIVE"},
-		{name: "me with suspended account is ACCOUNT_SUSPENDED", method: "GET", path: "/api/v1/users/me", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(types.AuthUser{}, response.ErrAccountSuspended).Once()
-		}, wantStatus: 403, wantCode: "ACCOUNT_SUSPENDED"},
-		{name: "me when zitadel is down is ZITADEL_UNAVAILABLE", method: "GET", path: "/api/v1/users/me", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(types.AuthUser{}, response.ErrZitadelUnavailable).Once()
-		}, wantStatus: 503, wantCode: "ZITADEL_UNAVAILABLE"},
-		{name: "me not synced yet is NOT_FOUND", method: "GET", path: "/api/v1/users/me", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(userPrincipal(), nil).Once()
-			s.EXPECT().GetUser(mock.Anything, userPrincipal().Sub).Return(nil, false, response.ErrNotFound).Once()
-		}, wantStatus: 404, wantCode: "NOT_FOUND"},
-		{name: "me returns the caller's row", method: "GET", path: "/api/v1/users/me", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-			u := sampleUser()
-			s.EXPECT().GetUser(mock.Anything, adminPrincipal().Sub).Return(&u, true, nil).Once()
-		}, wantStatus: 200},
-		// /users
-		{name: "list as non-admin is FORBIDDEN", method: "GET", path: "/api/v1/users", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(userPrincipal(), nil).Once()
-		}, wantStatus: 403, wantCode: "FORBIDDEN"},
-		{name: "list with per_page over 100 is VALIDATION_ERROR", method: "GET", path: "/api/v1/users?per_page=1000", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-		}, wantStatus: 422, wantCode: "VALIDATION_ERROR"},
-		{name: "list as admin is paginated", method: "GET", path: "/api/v1/users?page=2&per_page=10", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-			s.EXPECT().ListUsers(mock.Anything, dto.ListUsersQuery{Page: 2, PerPage: 10}).Return([]dto.UserResponse{sampleUser()}, 25, nil).Once()
-		}, wantStatus: 200},
-		{name: "list db failure is INTERNAL_ERROR", method: "GET", path: "/api/v1/users", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-			s.EXPECT().ListUsers(mock.Anything, mock.Anything).Return(nil, 0, errDB).Once()
-		}, wantStatus: 500, wantCode: "INTERNAL_ERROR"},
-		// /users/:sub
-		{name: "get as non-admin is FORBIDDEN", method: "GET", path: "/api/v1/users/355646255235338042", bearer: "tok", setup: func(_ *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(userPrincipal(), nil).Once()
-		}, wantStatus: 403, wantCode: "FORBIDDEN"},
-		{name: "get unknown sub is NOT_FOUND", method: "GET", path: "/api/v1/users/0", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-			s.EXPECT().GetUser(mock.Anything, "0").Return(nil, false, response.ErrNotFound).Once()
-		}, wantStatus: 404, wantCode: "NOT_FOUND"},
-		{name: "get as admin returns the row", method: "GET", path: "/api/v1/users/355646255235338042", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-			u := sampleUser()
-			s.EXPECT().GetUser(mock.Anything, "355646255235338042").Return(&u, false, nil).Once()
-		}, wantStatus: 200},
-		// /users/:sub/sub-accounts
-		{name: "sub-accounts without token is TOKEN_MISSING", method: "GET", path: "/api/v1/users/1/sub-accounts", setup: func(*mocks.UserService, *cmocks.Authenticator) {}, wantStatus: 401, wantCode: "TOKEN_MISSING"},
-		{name: "sub-accounts of unknown sub is NOT_FOUND", method: "GET", path: "/api/v1/users/0/sub-accounts", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(userPrincipal(), nil).Once()
-			s.EXPECT().ListSubAccounts(mock.Anything, "0").Return(nil, response.ErrNotFound).Once()
-		}, wantStatus: 404, wantCode: "NOT_FOUND"},
-		{name: "sub-accounts lists children for any authenticated user", method: "GET", path: "/api/v1/users/1/sub-accounts", bearer: "tok", setup: func(s *mocks.UserService, a *cmocks.Authenticator) {
-			a.EXPECT().Authenticate(mock.Anything, "tok").Return(userPrincipal(), nil).Once()
-			s.EXPECT().ListSubAccounts(mock.Anything, "1").Return([]dto.UserResponse{sampleUser()}, nil).Once()
-		}, wantStatus: 200},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			r, svc, authn := newRouter(t)
-			tt.setup(svc, authn)
-			rec, env := do(t, r, tt.method, tt.path, tt.bearer)
-			assert.Equal(t, tt.wantStatus, rec.Code, rec.Body.String())
-			if tt.wantCode != "" {
-				require.NotNil(t, env.Error)
-				assert.Equal(t, tt.wantCode, env.Error.Code)
-				assert.False(t, env.Success)
-				return
-			}
-			assert.True(t, env.Success)
-			assert.NotNil(t, env.Data)
-		})
-	}
-}
-
-func TestUserHandler_ListMeta(t *testing.T) {
-	t.Parallel()
-	r, svc, authn := newRouter(t)
-	authn.EXPECT().Authenticate(mock.Anything, "tok").Return(adminPrincipal(), nil).Once()
-	svc.EXPECT().ListUsers(mock.Anything, dto.ListUsersQuery{Page: 3, PerPage: 10}).Return([]dto.UserResponse{}, 25, nil).Once()
-	_, env := do(t, r, http.MethodGet, "/api/v1/users?page=3&per_page=10", "tok")
-	require.NotNil(t, env.Meta)
-	assert.Equal(t, 3, env.Meta.Page)
-	assert.Equal(t, 10, env.Meta.PerPage)
-	assert.Equal(t, int64(25), env.Meta.Total)
-	assert.Equal(t, 3, env.Meta.TotalPages)
 }
 
 func ptr[T any](v T) *T { return &v }

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 	"github.com/4jawaly/identity-gateway/internal/modules/user/usercache"
 	"github.com/4jawaly/identity-gateway/pkg/cache"
 )
@@ -52,38 +52,38 @@ func TestUserCache_Introspect(t *testing.T) {
 	tests := []struct {
 		name      string
 		run       func(t *testing.T, cs *clockStore, uc *usercache.Cache)
-		wantState services.State
+		wantState usersvc.State
 		wantBytes []byte
 	}{
-		{name: "empty cache is a miss", run: func(*testing.T, *clockStore, *usercache.Cache) {}, wantState: services.StateMiss},
+		{name: "empty cache is a miss", run: func(*testing.T, *clockStore, *usercache.Cache) {}, wantState: usersvc.StateMiss},
 		{name: "set then lookup is a hit", run: func(t *testing.T, _ *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.SetIntrospect(ctx, h, report, time.Minute))
-		}, wantState: services.StateHit, wantBytes: report},
+		}, wantState: usersvc.StateHit, wantBytes: report},
 		{name: "mark inactive then lookup is inactive", run: func(t *testing.T, _ *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.MarkInactive(ctx, h, 30*time.Second))
-		}, wantState: services.StateInactive},
+		}, wantState: usersvc.StateInactive},
 		{name: "set after mark clears the marker", run: func(t *testing.T, _ *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.MarkInactive(ctx, h, 30*time.Second))
 			require.NoError(t, uc.SetIntrospect(ctx, h, report, time.Minute))
-		}, wantState: services.StateHit, wantBytes: report},
+		}, wantState: usersvc.StateHit, wantBytes: report},
 		{name: "mark after set drops the report so expiry yields a miss not a stale hit", run: func(t *testing.T, cs *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.SetIntrospect(ctx, h, report, time.Hour))
 			require.NoError(t, uc.MarkInactive(ctx, h, 30*time.Second))
 			_, st, _ := uc.LookupIntrospect(ctx, h)
-			require.Equal(t, services.StateInactive, st)
+			require.Equal(t, usersvc.StateInactive, st)
 			cs.advance(31 * time.Second)
-		}, wantState: services.StateMiss},
+		}, wantState: usersvc.StateMiss},
 		{name: "both keys present means inactive wins", run: func(t *testing.T, cs *clockStore, _ *usercache.Cache) {
 			require.NoError(t, cs.Set(ctx, usercache.IntrospectKey(h), report, 0))
 			require.NoError(t, cs.Set(ctx, usercache.InactiveKey(h), []byte("1"), 0))
-		}, wantState: services.StateInactive},
+		}, wantState: usersvc.StateInactive},
 		{name: "empty report is a miss", run: func(t *testing.T, _ *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.SetIntrospect(ctx, h, []byte{}, time.Minute))
-		}, wantState: services.StateMiss},
+		}, wantState: usersvc.StateMiss},
 		{name: "report expires", run: func(t *testing.T, cs *clockStore, uc *usercache.Cache) {
 			require.NoError(t, uc.SetIntrospect(ctx, h, report, time.Minute))
 			cs.advance(61 * time.Second)
-		}, wantState: services.StateMiss},
+		}, wantState: usersvc.StateMiss},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,15 +112,13 @@ func TestUserCache_StoreFailure(t *testing.T) {
 		{name: "lookup is a miss with error", call: func() error {
 			b, st, err := uc.LookupIntrospect(ctx, "h")
 			assert.Nil(t, b)
-			assert.Equal(t, services.StateMiss, st)
+			assert.Equal(t, usersvc.StateMiss, st)
 			return err
 		}},
 		{name: "set introspect fails", call: func() error { return uc.SetIntrospect(ctx, "h", []byte("x"), time.Minute) }},
 		{name: "mark inactive fails", call: func() error { return uc.MarkInactive(ctx, "h", time.Minute) }},
 		{name: "get sync seen fails", call: func() error { _, err := uc.GetSyncSeen(ctx, "s"); return err }},
 		{name: "set sync seen fails", call: func() error { return uc.SetSyncSeen(ctx, "s", "h", time.Hour) }},
-		{name: "get user fails", call: func() error { _, err := uc.GetUser(ctx, "s"); return err }},
-		{name: "set user fails", call: func() error { return uc.SetUser(ctx, "s", []byte("x"), time.Minute) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,7 +128,7 @@ func TestUserCache_StoreFailure(t *testing.T) {
 	}
 }
 
-func TestUserCache_SyncSeenAndUser(t *testing.T) {
+func TestUserCache_SyncSeen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cs := newClockStore()
@@ -145,16 +143,6 @@ func TestUserCache_SyncSeenAndUser(t *testing.T) {
 	cs.advance(time.Hour + time.Second)
 	seen, _ = uc.GetSyncSeen(ctx, "355")
 	assert.Equal(t, "", seen, "sync seen expires")
-
-	u, err := uc.GetUser(ctx, "355")
-	require.NoError(t, err)
-	assert.Nil(t, u, "missing user is nil")
-	require.NoError(t, uc.SetUser(ctx, "355", []byte(`{"sub":"355"}`), 5*time.Minute))
-	u, _ = uc.GetUser(ctx, "355")
-	assert.Equal(t, []byte(`{"sub":"355"}`), u)
-	cs.advance(6 * time.Minute)
-	u, _ = uc.GetUser(ctx, "355")
-	assert.Nil(t, u, "user expires")
 }
 
 func TestUserCache_Keys(t *testing.T) {
@@ -163,7 +151,6 @@ func TestUserCache_Keys(t *testing.T) {
 		{"introspect", usercache.IntrospectKey("h"), "introspect:h"},
 		{"inactive", usercache.InactiveKey("h"), "inactive:h"},
 		{"sync seen", usercache.SyncSeenKey("355"), "sync:seen:355"},
-		{"user", usercache.UserKey("355"), "user:355"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

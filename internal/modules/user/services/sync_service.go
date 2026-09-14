@@ -8,7 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
 )
 
 // SyncService is the worker-side writer.
@@ -40,7 +40,7 @@ func NewSyncService(repo UserRepository, opts ...SyncOption) *SyncService {
 //
 // Steps 2-3 run only when step 1 wrote, so a stale or unchanged message is
 // a complete no-op.
-func (s *SyncService) Sync(ctx context.Context, p dto.UserSyncPayload, occurredAt time.Time) error {
+func (s *SyncService) Sync(ctx context.Context, p userdto.UserSyncPayload, occurredAt time.Time) error {
 	if p.Sub == "" {
 		return fmt.Errorf("sync: empty sub")
 	}

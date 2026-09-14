@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	usersync "github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 	"github.com/4jawaly/identity-gateway/pkg/cache"
 )
 
-// Cache implements services.Cache and sync_user.DedupeCache on a cache.Store.
+// Cache implements usersvc.Cache and usersync.DedupeCache on a cache.Store.
 //
 // The report and the inactive marker for one token are two keys. Reads give
 // the inactive marker precedence, and every compound write stores the key
@@ -22,21 +22,21 @@ type Cache struct{ s cache.Store }
 func New(s cache.Store) *Cache { return &Cache{s: s} }
 
 // LookupIntrospect reads the report and the inactive marker in one round trip.
-func (c *Cache) LookupIntrospect(ctx context.Context, hash string) ([]byte, services.State, error) {
+func (c *Cache) LookupIntrospect(ctx context.Context, hash string) ([]byte, usersvc.State, error) {
 	vals, err := c.s.MGet(ctx, IntrospectKey(hash), InactiveKey(hash))
 	if err != nil {
-		return nil, services.StateMiss, err
+		return nil, usersvc.StateMiss, err
 	}
 	if len(vals) != 2 {
-		return nil, services.StateMiss, fmt.Errorf("lookup introspect: expected 2 values, got %d", len(vals))
+		return nil, usersvc.StateMiss, fmt.Errorf("lookup introspect: expected 2 values, got %d", len(vals))
 	}
 	if vals[1] != nil {
-		return nil, services.StateInactive, nil
+		return nil, usersvc.StateInactive, nil
 	}
 	if len(vals[0]) > 0 {
-		return vals[0], services.StateHit, nil
+		return vals[0], usersvc.StateHit, nil
 	}
-	return nil, services.StateMiss, nil
+	return nil, usersvc.StateMiss, nil
 }
 
 // SetIntrospect stores the report, then clears any inactive marker.
@@ -66,21 +66,7 @@ func (c *Cache) SetSyncSeen(ctx context.Context, sub, hash string, ttl time.Dura
 	return c.s.Set(ctx, SyncSeenKey(sub), []byte(hash), ttl)
 }
 
-// GetUser returns the cached user document, or nil when absent.
-func (c *Cache) GetUser(ctx context.Context, sub string) ([]byte, error) {
-	v, ok, err := c.s.Get(ctx, UserKey(sub))
-	if err != nil || !ok {
-		return nil, err
-	}
-	return v, nil
-}
-
-// SetUser stores a user document.
-func (c *Cache) SetUser(ctx context.Context, sub string, data []byte, ttl time.Duration) error {
-	return c.s.Set(ctx, UserKey(sub), data, ttl)
-}
-
 var (
-	_ services.Cache        = (*Cache)(nil)
-	_ sync_user.DedupeCache = (*Cache)(nil)
+	_ usersvc.Cache        = (*Cache)(nil)
+	_ usersync.DedupeCache = (*Cache)(nil)
 )

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 	"github.com/4jawaly/identity-gateway/internal/modules/user/tests/mocks"
 	"github.com/4jawaly/identity-gateway/internal/response"
 	"github.com/4jawaly/identity-gateway/pkg/circuitbreaker"
@@ -24,13 +24,13 @@ func TestUserService_Introspect(t *testing.T) {
 	t.Parallel()
 
 	const token = "tok_valid"
-	hash := services.TokenHash(token)
+	hash := usersvc.TokenHash(token)
 
 	tests := []struct {
 		name       string
 		token      string
 		setup      func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier)
-		want       *dto.IntrospectResponse
+		want       *userdto.IntrospectResponse
 		wantCached bool
 		wantErr    error
 		wantReport bool // report returned alongside wantErr
@@ -41,7 +41,7 @@ func TestUserService_Introspect(t *testing.T) {
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
 				c.EXPECT().LookupIntrospect(mock.Anything, hash).
-					Return(mustJSON(t, loadFixture[dto.IntrospectResponse](t, "report_admin.json")), services.StateHit, nil).Once()
+					Return(mustJSON(t, loadFixture[userdto.IntrospectResponse](t, "report_admin.json")), usersvc.StateHit, nil).Once()
 				// z and n get NO expectations — any call to them fails the test
 			},
 			want:       adminReport(),
@@ -51,7 +51,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "inactive hit returns TOKEN_INACTIVE without calling zitadel",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateInactive, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateInactive, nil).Once()
 			},
 			wantErr: response.ErrTokenInactive,
 		},
@@ -59,10 +59,10 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "miss populates cache and notifies",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(loadClaims(t, "userinfo_admin.json"), nil).Once()
 				c.EXPECT().SetIntrospect(mock.Anything, hash, mustJSON(t, adminReport()), 120*time.Second).Return(nil).Once()
-				n.EXPECT().Notify(mock.Anything, mock.MatchedBy(func(p dto.UserSyncPayload) bool {
+				n.EXPECT().Notify(mock.Anything, mock.MatchedBy(func(p userdto.UserSyncPayload) bool {
 					return p.Sub == "355646255235338042" && p.Issuer == testIssuer && len(p.Origin) > 0 &&
 						p.MainAccount.AccountTypeName == "Company"
 				})).Return(nil).Once()
@@ -73,7 +73,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "zitadel 401 marks inactive and writes nothing else",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(nil, response.ErrTokenInactive.With(errors.New("401"), nil)).Once()
 				c.EXPECT().MarkInactive(mock.Anything, hash, 30*time.Second).Return(nil).Once()
 			},
@@ -83,7 +83,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "zitadel 503 writes nothing",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(nil, response.ErrZitadelUnavailable.With(errors.New("503"), nil)).Once()
 			},
 			wantErr: response.ErrZitadelUnavailable,
@@ -92,7 +92,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "breaker open writes nothing and is never TOKEN_INACTIVE",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).
 					Return(nil, response.ErrZitadelUnavailable.With(circuitbreaker.ErrOpen, nil)).Once()
 				// no SetIntrospect, no MarkInactive, no Notify expected
@@ -104,7 +104,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "issuer mismatch is rejected and nothing is written",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				claims := loadClaims(t, "userinfo_admin.json")
 				claims.Iss = "https://evil.example"
 				z.EXPECT().UserInfo(mock.Anything, token).Return(claims, nil).Once()
@@ -115,7 +115,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "issuer with trailing slash is accepted",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				claims := loadClaims(t, "userinfo_admin.json")
 				claims.Iss = testIssuer + "/"
 				z.EXPECT().UserInfo(mock.Anything, token).Return(claims, nil).Once()
@@ -128,10 +128,10 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "suspended account is cached, notified and returns ACCOUNT_SUSPENDED with the report",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(loadClaims(t, "userinfo_suspended.json"), nil).Once()
 				c.EXPECT().SetIntrospect(mock.Anything, hash, mock.Anything, mock.Anything).Return(nil).Once()
-				n.EXPECT().Notify(mock.Anything, mock.MatchedBy(func(p dto.UserSyncPayload) bool {
+				n.EXPECT().Notify(mock.Anything, mock.MatchedBy(func(p userdto.UserSyncPayload) bool {
 					return p.MainAccount.StatusName == "Suspended"
 				})).Return(nil).Once()
 			},
@@ -144,7 +144,7 @@ func TestUserService_Introspect(t *testing.T) {
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
 				r := adminReport()
 				r.MainAccount.StatusName = "Suspended"
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(mustJSON(t, r), services.StateHit, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(mustJSON(t, r), usersvc.StateHit, nil).Once()
 			},
 			wantErr:    response.ErrAccountSuspended,
 			wantReport: true,
@@ -171,7 +171,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "redis error falls through to zitadel instead of failing",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateMiss, errors.New("redis: connection refused")).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateMiss, errors.New("redis: connection refused")).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(loadClaims(t, "userinfo_admin.json"), nil).Once()
 				c.EXPECT().SetIntrospect(mock.Anything, hash, mock.Anything, mock.Anything).Return(errors.New("redis: still down")).Once()
 				n.EXPECT().Notify(mock.Anything, mock.Anything).Return(nil).Once()
@@ -182,7 +182,7 @@ func TestUserService_Introspect(t *testing.T) {
 			name:  "corrupt cached report is refetched",
 			token: token,
 			setup: func(t *testing.T, c *mocks.Cache, z *mocks.ZitadelClient, n *mocks.SyncNotifier) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return([]byte("{not json"), services.StateHit, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return([]byte("{not json"), usersvc.StateHit, nil).Once()
 				z.EXPECT().UserInfo(mock.Anything, token).Return(loadClaims(t, "userinfo_admin.json"), nil).Once()
 				c.EXPECT().SetIntrospect(mock.Anything, hash, mock.Anything, mock.Anything).Return(nil).Once()
 				n.EXPECT().Notify(mock.Anything, mock.Anything).Return(nil).Once()
@@ -224,7 +224,7 @@ func TestUserService_Introspect_ConcurrentSameToken(t *testing.T) {
 
 	const token = "tok_shared"
 	const workers = 25
-	hash := services.TokenHash(token)
+	hash := usersvc.TokenHash(token)
 
 	svc, c, z, n := newTestService(t)
 
@@ -233,9 +233,9 @@ func TestUserService_Introspect_ConcurrentSameToken(t *testing.T) {
 	release := make(chan struct{})
 
 	c.EXPECT().LookupIntrospect(mock.Anything, hash).
-		RunAndReturn(func(context.Context, string) ([]byte, services.State, error) {
+		RunAndReturn(func(context.Context, string) ([]byte, usersvc.State, error) {
 			arrived.Done()
-			return nil, services.StateMiss, nil
+			return nil, usersvc.StateMiss, nil
 		}).Times(workers)
 	z.EXPECT().UserInfo(mock.Anything, token).
 		RunAndReturn(func(context.Context, string) (*zitadel.Claims, error) {
@@ -252,7 +252,7 @@ func TestUserService_Introspect_ConcurrentSameToken(t *testing.T) {
 	}()
 
 	var wg sync.WaitGroup
-	results := make([]*dto.IntrospectResponse, workers)
+	results := make([]*userdto.IntrospectResponse, workers)
 	errs := make([]error, workers)
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -272,7 +272,7 @@ func TestUserService_Introspect_ConcurrentSameToken(t *testing.T) {
 func TestUserService_Authenticate(t *testing.T) {
 	t.Parallel()
 	const token = "tok_auth"
-	hash := services.TokenHash(token)
+	hash := usersvc.TokenHash(token)
 
 	tests := []struct {
 		name    string
@@ -283,14 +283,14 @@ func TestUserService_Authenticate(t *testing.T) {
 		{
 			name: "cached report becomes a principal",
 			setup: func(t *testing.T, c *mocks.Cache) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(mustJSON(t, adminReport()), services.StateHit, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(mustJSON(t, adminReport()), usersvc.StateHit, nil).Once()
 			},
 			wantSub: "355646255235338042",
 		},
 		{
 			name: "inactive token is rejected",
 			setup: func(t *testing.T, c *mocks.Cache) {
-				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, services.StateInactive, nil).Once()
+				c.EXPECT().LookupIntrospect(mock.Anything, hash).Return(nil, usersvc.StateInactive, nil).Once()
 			},
 			wantErr: response.ErrTokenInactive,
 		},

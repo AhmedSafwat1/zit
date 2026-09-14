@@ -1,93 +1,50 @@
 // Package user is the user module: token introspection on the API side and
-// the user.sync consumer on the worker side.
+// the user.sync consumer on the worker side. Each half is a separate type
+// built only by the binary that needs it; services are constructed by
+// internal/bootstrap (the composition root) and handed in.
 package user
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
-	"gorm.io/gorm"
 
-	"github.com/4jawaly/identity-gateway/internal/config"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/handlers"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/repositories"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/routes"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/usercache"
-	"github.com/4jawaly/identity-gateway/pkg/cache"
+	userhandler "github.com/4jawaly/identity-gateway/internal/modules/user/handlers"
+	usersync "github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user"
+	userroute "github.com/4jawaly/identity-gateway/internal/modules/user/routes"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 	"github.com/4jawaly/identity-gateway/pkg/queue"
-	"github.com/4jawaly/identity-gateway/pkg/zitadel"
 )
 
-// Deps is everything the module may use. DB, Pub and Zitadel may be nil;
-// the module builds only the half those allow.
-type Deps struct {
-	DB      *gorm.DB
-	Store   cache.Store
-	Pub     queue.Publisher
-	Zitadel *zitadel.Client
-	Log     zerolog.Logger
-	Cfg     *config.Config
+// Name is the module name in both binaries.
+const Name = "user"
+
+// APIModule implements app.HTTPModule.
+type APIModule struct {
+	handler *userhandler.UserHandler
 }
 
-// Module implements app.Module.
-type Module struct {
-	userSvc  *services.UserService
-	syncSvc  *services.SyncService
-	handler  *handlers.UserHandler
-	consumer *sync_user.Consumer
-	withDB   bool
+// NewAPI wires the HTTP half.
+func NewAPI(svc *usersvc.UserService) *APIModule {
+	return &APIModule{handler: userhandler.NewUserHandler(svc)}
 }
 
-// New wires the module from explicit dependencies.
-func New(d Deps) *Module {
-	m := &Module{withDB: d.DB != nil}
-	log := d.Log.With().Str("module", "user").Logger()
-	var repo *repositories.UserRepository
-	if d.DB != nil {
-		repo = repositories.NewUserRepository(d.DB)
-	}
+// Name implements app.HTTPModule.
+func (m *APIModule) Name() string { return Name }
 
-	if d.Zitadel != nil && d.Store != nil && d.Pub != nil {
-		uc := usercache.New(d.Store)
-		notifier := sync_user.NewNotifier(d.Pub, uc,
-			sync_user.WithProducer(d.Cfg.App.Producer()),
-			sync_user.WithDedupeTTL(d.Cfg.Cache.SyncDedupeTTL),
-			sync_user.WithNotifierLogger(log),
-		)
-		opts := []services.ServiceOption{
-			services.WithIssuer(d.Cfg.Zitadel.Issuer),
-			services.WithTTLs(d.Cfg.Cache.IntrospectTTL, d.Cfg.Cache.InactiveTTL, d.Cfg.Cache.UserTTL),
-			services.WithLogger(log),
-		}
-		if repo != nil {
-			opts = append(opts, services.WithRepository(repo))
-		}
-		m.userSvc = services.NewUserService(d.Zitadel, uc, notifier, opts...)
-		m.handler = handlers.NewUserHandler(m.userSvc)
-	}
-	if repo != nil {
-		m.syncSvc = services.NewSyncService(repo, services.WithSyncLogger(log))
-		m.consumer = sync_user.NewConsumer(m.syncSvc)
-	}
-	return m
+// RegisterRoutes implements app.HTTPModule.
+func (m *APIModule) RegisterRoutes(g *gin.RouterGroup) { userroute.Register(g, m.handler) }
+
+// WorkerModule implements app.ConsumerModule.
+type WorkerModule struct {
+	consumer *usersync.Consumer
 }
 
-// Name implements app.Module.
-func (m *Module) Name() string { return "user" }
-
-// RegisterRoutes mounts the HTTP routes; a no-op without the API half.
-func (m *Module) RegisterRoutes(g *gin.RouterGroup) {
-	if m.handler == nil {
-		return
-	}
-	routes.Register(g, m.handler, m.userSvc, m.withDB)
+// NewWorker wires the queue half.
+func NewWorker(syncSvc *usersvc.SyncService) *WorkerModule {
+	return &WorkerModule{consumer: usersync.NewConsumer(syncSvc)}
 }
 
-// RegisterConsumers binds the user.sync consumer; a no-op without a DB.
-func (m *Module) RegisterConsumers(c *queue.Consumer) {
-	if m.consumer == nil {
-		return
-	}
-	m.consumer.Register(c)
-}
+// Name implements app.ConsumerModule.
+func (m *WorkerModule) Name() string { return Name }
+
+// RegisterConsumers implements app.ConsumerModule.
+func (m *WorkerModule) RegisterConsumers(c *queue.Consumer) { m.consumer.Register(c) }

@@ -6,10 +6,14 @@ import (
 	"github.com/4jawaly/identity-gateway/pkg/queue"
 )
 
-// Module is a self-contained feature: it registers HTTP routes in the API
-// binary and queue consumers in the worker binary. Either may be a no-op.
-type Module interface {
+// HTTPModule is a feature's API half: it mounts routes in cmd/api.
+type HTTPModule interface {
 	Name() string
 	RegisterRoutes(g *gin.RouterGroup)
+}
+
+// ConsumerModule is a feature's worker half: it binds queue handlers in cmd/worker.
+type ConsumerModule interface {
+	Name() string
 	RegisterConsumers(c *queue.Consumer)
 }

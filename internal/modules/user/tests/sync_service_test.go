@@ -22,9 +22,9 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/repositories"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	userrepo "github.com/4jawaly/identity-gateway/internal/modules/user/repositories"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 )
 
 // startPostgres boots postgres:16, applies the real migrations and returns a GORM handle.
@@ -83,9 +83,9 @@ func getUser(t *testing.T, db *gorm.DB, sub string) *userRow {
 	return &r
 }
 
-func snapshotOf(t *testing.T, r *userRow) dto.UserSyncPayload {
+func snapshotOf(t *testing.T, r *userRow) userdto.UserSyncPayload {
 	t.Helper()
-	var p dto.UserSyncPayload
+	var p userdto.UserSyncPayload
 	require.NotNil(t, r.Snapshot)
 	require.NoError(t, json.Unmarshal([]byte(*r.Snapshot), &p))
 	return p
@@ -98,11 +98,11 @@ func parentsOf(t *testing.T, db *gorm.DB, childSub string) []string {
 	return subs
 }
 
-func payloadFor(sub string, parents ...string) dto.UserSyncPayload {
-	return dto.UserSyncPayload{
+func payloadFor(sub string, parents ...string) userdto.UserSyncPayload {
+	return userdto.UserSyncPayload{
 		Sub: sub, Email: sub + "@example.test", Nickname: "شركة " + sub,
 		Roles: []string{"USER"},
-		MainAccount: dto.MainAccountPayload{
+		MainAccount: userdto.MainAccountPayload{
 			Allowed: false, SubAccountsCount: 0, AccountID: "1", AccountTypeName: "Company", StatusName: "Active",
 		},
 		SubAccountOf: parents,
@@ -113,8 +113,7 @@ func payloadFor(sub string, parents ...string) dto.UserSyncPayload {
 func TestSyncService_Sync(t *testing.T) {
 	t.Parallel()
 	db := startPostgres(t)
-	repo := repositories.NewUserRepository(db)
-	svc := services.NewSyncService(repo)
+	svc := usersvc.NewSyncService(userrepo.NewUserRepository(db))
 	ctx := context.Background()
 	t0 := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(time.Minute)
@@ -263,29 +262,6 @@ func TestSyncService_Sync(t *testing.T) {
 				row := getUser(t, db, sub)
 				require.NotNil(t, row.Email)
 				assert.Equal(t, sub+"@example.test", *row.Email)
-			},
-		},
-		{
-			name: "repository lists children of a parent, placeholders included in the view",
-			run: func(t *testing.T, sub string) {
-				parent := "parent-" + sub
-				child1, child2, other := "c1-"+sub, "c2-"+sub, "o-"+sub
-				require.NoError(t, svc.Sync(ctx, payloadFor(child1, parent), t0))
-				require.NoError(t, svc.Sync(ctx, payloadFor(child2, "x-"+sub, parent), t0))
-				require.NoError(t, svc.Sync(ctx, payloadFor(other), t0))
-				rows, err := repo.ListSubAccounts(ctx, parent)
-				require.NoError(t, err)
-				views := dto.UsersFromModels(rows)
-				subs := make([]string, 0, len(views))
-				for _, v := range views {
-					subs = append(subs, v.Sub)
-					assert.False(t, v.IsPlaceholder)
-				}
-				assert.Equal(t, []string{child1, child2}, subs)
-
-				prow, err := repo.GetBySub(ctx, parent)
-				require.NoError(t, err)
-				assert.True(t, dto.UserFromModel(prow).IsPlaceholder)
 			},
 		},
 	}

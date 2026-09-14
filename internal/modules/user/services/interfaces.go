@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/models"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	usermodel "github.com/4jawaly/identity-gateway/internal/modules/user/models"
 	"github.com/4jawaly/identity-gateway/pkg/cache"
 	"github.com/4jawaly/identity-gateway/pkg/zitadel"
 )
@@ -19,7 +19,7 @@ type ZitadelClient interface {
 
 // SyncNotifier hands a fresh identity to the async sync pipeline.
 type SyncNotifier interface {
-	Notify(ctx context.Context, p dto.UserSyncPayload) error
+	Notify(ctx context.Context, p userdto.UserSyncPayload) error
 }
 
 // State is the outcome of an introspection cache lookup.
@@ -49,8 +49,6 @@ type Cache interface {
 	LookupIntrospect(ctx context.Context, hash string) (report []byte, state State, err error)
 	SetIntrospect(ctx context.Context, hash string, report []byte, ttl time.Duration) error
 	MarkInactive(ctx context.Context, hash string, ttl time.Duration) error
-	GetUser(ctx context.Context, sub string) ([]byte, error)
-	SetUser(ctx context.Context, sub string, data []byte, ttl time.Duration) error
 }
 
 // TokenHash derives the cache key material from a raw bearer token. It is
@@ -61,13 +59,11 @@ func TokenHash(token string) string { return cache.SHA256Hex(token) }
 // gorm.ErrRecordNotFound for a missing row. Writes are meant to be composed
 // inside Transaction, which hands back a repository bound to the tx.
 type UserRepository interface {
-	GetBySub(ctx context.Context, sub string) (*models.User, error)
-	List(ctx context.Context, offset, limit int) ([]models.User, int64, error)
-	ListSubAccounts(ctx context.Context, parentSub string) ([]models.User, error)
+	GetBySub(ctx context.Context, sub string) (*usermodel.User, error)
 
 	// UpsertUser writes the row and reports whether anything was written
 	// (false when the stale guard or the hash guard rejected it).
-	UpsertUser(ctx context.Context, p dto.UserSyncPayload, snapshot []byte, hash string, syncedAt time.Time) (bool, error)
+	UpsertUser(ctx context.Context, p userdto.UserSyncPayload, snapshot []byte, hash string, syncedAt time.Time) (bool, error)
 	// EnsureUsers creates sub-only rows for every sub that does not exist yet.
 	EnsureUsers(ctx context.Context, subs []string) error
 	// ReconcileSubAccounts makes parentSubs the exact parent set of childSub.

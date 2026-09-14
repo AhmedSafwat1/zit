@@ -65,16 +65,11 @@ func run(cfg *config.Config, log zerolog.Logger) error {
 		return fmt.Errorf("zitadel http client: %w", err)
 	}
 
-	opts := []app.Option{
+	k, err := app.New(
 		app.WithConfig(cfg), app.WithLogger(log),
 		app.WithRedis(), app.WithPublisher(), app.WithZitadel(zitHTTP),
-	}
-	// The hot path never touches Postgres. The read-only /users endpoints do,
-	// so the pool is opened only when DB_HOST is configured.
-	if cfg.Database.Enabled() {
-		opts = append(opts, app.WithDatabase())
-	}
-	k, err := app.New(opts...)
+		// deliberately no WithDatabase: the API never touches Postgres
+	)
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}
@@ -88,7 +83,7 @@ func run(cfg *config.Config, log zerolog.Logger) error {
 
 	r := router.New(k)
 	api := router.APIGroup(r, k)
-	for _, m := range bootstrap.BuildModules(k) {
+	for _, m := range bootstrap.APIModules(k) {
 		m.RegisterRoutes(api)
 		log.Info().Str("module", m.Name()).Msg("routes registered")
 	}

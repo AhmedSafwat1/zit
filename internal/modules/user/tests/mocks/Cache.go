@@ -24,65 +24,6 @@ func (_m *Cache) EXPECT() *Cache_Expecter {
 	return &Cache_Expecter{mock: &_m.Mock}
 }
 
-// GetUser provides a mock function with given fields: ctx, sub
-func (_m *Cache) GetUser(ctx context.Context, sub string) ([]byte, error) {
-	ret := _m.Called(ctx, sub)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetUser")
-	}
-
-	var r0 []byte
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) ([]byte, error)); ok {
-		return rf(ctx, sub)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, string) []byte); ok {
-		r0 = rf(ctx, sub)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]byte)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, sub)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// Cache_GetUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUser'
-type Cache_GetUser_Call struct {
-	*mock.Call
-}
-
-// GetUser is a helper method to define mock.On call
-//   - ctx context.Context
-//   - sub string
-func (_e *Cache_Expecter) GetUser(ctx interface{}, sub interface{}) *Cache_GetUser_Call {
-	return &Cache_GetUser_Call{Call: _e.mock.On("GetUser", ctx, sub)}
-}
-
-func (_c *Cache_GetUser_Call) Run(run func(ctx context.Context, sub string)) *Cache_GetUser_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
-	})
-	return _c
-}
-
-func (_c *Cache_GetUser_Call) Return(_a0 []byte, _a1 error) *Cache_GetUser_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *Cache_GetUser_Call) RunAndReturn(run func(context.Context, string) ([]byte, error)) *Cache_GetUser_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // LookupIntrospect provides a mock function with given fields: ctx, hash
 func (_m *Cache) LookupIntrospect(ctx context.Context, hash string) ([]byte, services.State, error) {
 	ret := _m.Called(ctx, hash)
@@ -242,55 +183,6 @@ func (_c *Cache_SetIntrospect_Call) Return(_a0 error) *Cache_SetIntrospect_Call 
 }
 
 func (_c *Cache_SetIntrospect_Call) RunAndReturn(run func(context.Context, string, []byte, time.Duration) error) *Cache_SetIntrospect_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// SetUser provides a mock function with given fields: ctx, sub, data, ttl
-func (_m *Cache) SetUser(ctx context.Context, sub string, data []byte, ttl time.Duration) error {
-	ret := _m.Called(ctx, sub, data, ttl)
-
-	if len(ret) == 0 {
-		panic("no return value specified for SetUser")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, []byte, time.Duration) error); ok {
-		r0 = rf(ctx, sub, data, ttl)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// Cache_SetUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetUser'
-type Cache_SetUser_Call struct {
-	*mock.Call
-}
-
-// SetUser is a helper method to define mock.On call
-//   - ctx context.Context
-//   - sub string
-//   - data []byte
-//   - ttl time.Duration
-func (_e *Cache_Expecter) SetUser(ctx interface{}, sub interface{}, data interface{}, ttl interface{}) *Cache_SetUser_Call {
-	return &Cache_SetUser_Call{Call: _e.mock.On("SetUser", ctx, sub, data, ttl)}
-}
-
-func (_c *Cache_SetUser_Call) Run(run func(ctx context.Context, sub string, data []byte, ttl time.Duration)) *Cache_SetUser_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].([]byte), args[3].(time.Duration))
-	})
-	return _c
-}
-
-func (_c *Cache_SetUser_Call) Return(_a0 error) *Cache_SetUser_Call {
-	_c.Call.Return(_a0)
-	return _c
-}
-
-func (_c *Cache_SetUser_Call) RunAndReturn(run func(context.Context, string, []byte, time.Duration) error) *Cache_SetUser_Call {
 	_c.Call.Return(run)
 	return _c
 }

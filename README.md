@@ -16,7 +16,7 @@ NULL, `synced_at IS NULL`) until it logs in itself.
 cmd/api            HTTP gateway (Redis + RabbitMQ publisher + Zitadel; Postgres only when DB_DSN is set)
 cmd/worker         RabbitMQ consumer (Postgres + Redis; no Zitadel, no publisher)
 internal/app       dependency container + Module interface
-internal/bootstrap wires modules from the container
+internal/bootstrap composition root: builds every dependency once, wires modules in order
 internal/config    env-only configuration (godotenv + caarlos0/env)
 internal/response  one JSON envelope + AppError catalog
 internal/reqctx    request id / auth user carried on context
@@ -29,6 +29,38 @@ pkg/queue          envelope, confirm-mode publisher, consumer with retry/DLQ
 pkg/zitadel        userinfo client + claims decoding
 migrations         golang-migrate SQL
 ```
+
+## Adding a module
+
+`internal/bootstrap` is the composition root. Modules do not build their own
+dependencies; they receive services and own only the thin adapters (handlers,
+routes, consumers).
+
+1. Create `internal/modules/<name>/` with `models / dto / repositories / services / handlers / jobs / routes / tests / module.go`.
+2. Each half is its own type: `NewAPI(...)` implements `app.HTTPModule`, `NewWorker(...)` implements
+   `app.ConsumerModule`. A module may have only one half. Constructors take already-built services.
+3. Build the services in `internal/bootstrap/shared.go` (`APIShared` for cmd/api, `ConsumerShared` for
+   cmd/worker) when other modules will use them, otherwise in a new `internal/bootstrap/<name>.go`. Append
+   the module to `APIModules` or `WorkerModules`, after the modules it depends on. The API never builds
+   consumers; the worker never builds HTTP services.
+4. Take cross-module dependencies through the shared accessors (`s.UserRepository()`, `s.Authenticator()`).
+   They return a true nil interface when absent, so a `dep == nil` check inside the module is honest.
+5. Declare the interface you need yourself, in your own `services` package, and register it in
+   `.mockery.yaml` under your package:
+
+   ```go
+   // internal/modules/billing/services/interfaces.go
+   type UserReader interface {
+       GetBySub(ctx context.Context, sub string) (*usermodels.User, error) // usermodels = internal/modules/user/models
+   }
+   ```
+
+   Not-found across modules is `gorm.ErrRecordNotFound`.
+6. Import rule: a module may import another module's `models` and `dto` only. Never its `services`,
+   `repositories`, `usercache`, `handlers`, `routes` or `jobs`. Only `internal/bootstrap` imports those.
+7. Transactions do not cross modules. `EnsureUsers` is idempotent: call it before your own transaction.
+   If an atomic cross-module write is ever required, add a tx-in-context helper (`internal/db.WithTx(ctx, *gorm.DB)`
+   / `Conn(ctx, base)`) and make repositories read the tx from ctx; do not pass `*gorm.DB` through interfaces.
 
 ## Quickstart
 

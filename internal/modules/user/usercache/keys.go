@@ -14,6 +14,3 @@ func InactiveKey(hash string) string { return cache.Key("inactive", hash) }
 
 // SyncSeenKey holds the last payload hash published for a subject.
 func SyncSeenKey(sub string) string { return cache.Key("sync", "seen", sub) }
-
-// UserKey holds a cached user document.
-func UserKey(sub string) string { return cache.Key("user", sub) }

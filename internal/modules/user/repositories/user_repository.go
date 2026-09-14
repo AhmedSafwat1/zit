@@ -12,12 +12,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/models"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	usermodel "github.com/4jawaly/identity-gateway/internal/modules/user/models"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 )
 
-// UserRepository implements services.UserRepository on GORM. Writes are raw
+// UserRepository implements usersvc.UserRepository on GORM. Writes are raw
 // SQL on purpose: conflict targets and arrays fight the query builder.
 type UserRepository struct{ db *gorm.DB }
 
@@ -28,47 +28,19 @@ func NewUserRepository(db *gorm.DB) *UserRepository { return &UserRepository{db:
 func (r *UserRepository) WithTx(tx *gorm.DB) *UserRepository { return &UserRepository{db: tx} }
 
 // Transaction runs fn inside one database transaction.
-func (r *UserRepository) Transaction(ctx context.Context, fn func(services.UserRepository) error) error {
+func (r *UserRepository) Transaction(ctx context.Context, fn func(usersvc.UserRepository) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(r.WithTx(tx))
 	})
 }
 
 // GetBySub loads one user.
-func (r *UserRepository) GetBySub(ctx context.Context, sub string) (*models.User, error) {
-	var u models.User
+func (r *UserRepository) GetBySub(ctx context.Context, sub string) (*usermodel.User, error) {
+	var u usermodel.User
 	if err := r.db.WithContext(ctx).Where("sub = ?", sub).Take(&u).Error; err != nil {
 		return nil, fmt.Errorf("get user %s: %w", sub, err)
 	}
 	return &u, nil
-}
-
-// List pages through users ordered by id.
-func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]models.User, int64, error) {
-	var total int64
-	if err := r.db.WithContext(ctx).Model(&models.User{}).Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count users: %w", err)
-	}
-	var rows []models.User
-	if err := r.db.WithContext(ctx).Order("id").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
-		return nil, 0, fmt.Errorf("list users: %w", err)
-	}
-	return rows, total, nil
-}
-
-// ListSubAccounts returns the children of parentSub through sub_accounts.
-func (r *UserRepository) ListSubAccounts(ctx context.Context, parentSub string) ([]models.User, error) {
-	var rows []models.User
-	err := r.db.WithContext(ctx).
-		Joins("JOIN sub_accounts sa ON sa.child_user_id = users.id").
-		Joins("JOIN users p ON p.id = sa.parent_user_id").
-		Where("p.sub = ?", parentSub).
-		Order("users.id").
-		Find(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("list sub accounts of %s: %w", parentSub, err)
-	}
-	return rows, nil
 }
 
 // upsertUserSQL writes a row only when the message is newer than what is
@@ -88,8 +60,8 @@ ON CONFLICT (sub) DO UPDATE SET
 WHERE (users.synced_at IS NULL OR users.synced_at < EXCLUDED.synced_at)
   AND users.identity_hash IS DISTINCT FROM EXCLUDED.identity_hash`
 
-// UpsertUser implements services.UserRepository.
-func (r *UserRepository) UpsertUser(ctx context.Context, p dto.UserSyncPayload, snapshot []byte, hash string, syncedAt time.Time) (bool, error) {
+// UpsertUser implements usersvc.UserRepository.
+func (r *UserRepository) UpsertUser(ctx context.Context, p userdto.UserSyncPayload, snapshot []byte, hash string, syncedAt time.Time) (bool, error) {
 	res := r.db.WithContext(ctx).Exec(upsertUserSQL,
 		p.Sub, p.Email, p.Nickname, string(snapshot), hash, syncedAt.UTC(),
 	)
@@ -106,7 +78,7 @@ INSERT INTO users (sub, created_at, updated_at)
 SELECT s, now(), now() FROM unnest(?::text[]) AS s
 ON CONFLICT (sub) DO NOTHING`
 
-// EnsureUsers implements services.UserRepository.
+// EnsureUsers implements usersvc.UserRepository.
 func (r *UserRepository) EnsureUsers(ctx context.Context, subs []string) error {
 	if len(subs) == 0 {
 		return nil
@@ -132,7 +104,7 @@ WHERE sa.child_user_id = c.id
   AND c.sub = ?
   AND sa.parent_user_id NOT IN (SELECT id FROM users WHERE sub = ANY(?::text[]))`
 
-// ReconcileSubAccounts implements services.UserRepository.
+// ReconcileSubAccounts implements usersvc.UserRepository.
 func (r *UserRepository) ReconcileSubAccounts(ctx context.Context, childSub string, parentSubs []string) error {
 	db := r.db.WithContext(ctx)
 	if len(parentSubs) > 0 {
@@ -171,4 +143,4 @@ func (a textArray) Value() (driver.Value, error) {
 	return b.String(), nil
 }
 
-var _ services.UserRepository = (*UserRepository)(nil)
+var _ usersvc.UserRepository = (*UserRepository)(nil)

@@ -3,7 +3,7 @@
 package sync_user
 
 import (
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
 	"github.com/4jawaly/identity-gateway/pkg/queue"
 )
 
@@ -19,7 +19,7 @@ var Binding = queue.Binding{Queue: queue.QueueUserSync, RoutingKey: EventType}
 // UserSyncPayload is the job payload. The type lives in dto so services can
 // reference it without importing jobs; this alias keeps the job package the
 // place people look for it.
-type UserSyncPayload = dto.UserSyncPayload
+type UserSyncPayload = userdto.UserSyncPayload
 
 // MainAccountPayload is the account block of the payload.
-type MainAccountPayload = dto.MainAccountPayload
+type MainAccountPayload = userdto.MainAccountPayload

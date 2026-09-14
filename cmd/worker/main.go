@@ -61,7 +61,7 @@ func run(cfg *config.Config, log zerolog.Logger) error {
 			queue.Retry(queue.DefaultRetryPolicy(cfg.Queue.MaxRetries, cfg.Queue.RetryDelay)),
 		),
 	)
-	for _, m := range bootstrap.BuildModules(k) {
+	for _, m := range bootstrap.WorkerModules(k) {
 		m.RegisterConsumers(consumer)
 		log.Info().Str("module", m.Name()).Msg("consumers registered")
 	}

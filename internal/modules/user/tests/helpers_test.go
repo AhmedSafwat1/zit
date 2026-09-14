@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
-	"github.com/4jawaly/identity-gateway/internal/modules/user/services"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	usersvc "github.com/4jawaly/identity-gateway/internal/modules/user/services"
 	"github.com/4jawaly/identity-gateway/internal/modules/user/tests/mocks"
 	"github.com/4jawaly/identity-gateway/pkg/zitadel"
 )
@@ -21,13 +21,13 @@ const testIssuer = "https://zauth.4ja.org"
 func runInline(f func()) { f() }
 
 // newTestService builds a UserService on fresh mocks with an inline runner.
-func newTestService(t *testing.T, opts ...services.ServiceOption) (*services.UserService, *mocks.Cache, *mocks.ZitadelClient, *mocks.SyncNotifier) {
+func newTestService(t *testing.T, opts ...usersvc.ServiceOption) (*usersvc.UserService, *mocks.Cache, *mocks.ZitadelClient, *mocks.SyncNotifier) {
 	t.Helper()
 	c := mocks.NewCache(t)
 	z := mocks.NewZitadelClient(t)
 	n := mocks.NewSyncNotifier(t)
-	base := []services.ServiceOption{services.WithSyncRunner(runInline), services.WithIssuer(testIssuer)}
-	svc := services.NewUserService(z, c, n, append(base, opts...)...)
+	base := []usersvc.ServiceOption{usersvc.WithSyncRunner(runInline), usersvc.WithIssuer(testIssuer)}
+	svc := usersvc.NewUserService(z, c, n, append(base, opts...)...)
 	return svc, c, z, n
 }
 
@@ -56,13 +56,13 @@ func loadClaims(t *testing.T, name string) *zitadel.Claims {
 
 // adminReport is the expected report for userinfo_admin.json, spelled out
 // by hand so the test does not validate the mapper with itself.
-func adminReport() *dto.IntrospectResponse {
-	return &dto.IntrospectResponse{
+func adminReport() *userdto.IntrospectResponse {
+	return &userdto.IntrospectResponse{
 		OK:       true,
-		Identity: dto.Identity{Sub: "355646255235338042", Email: "admin@rawazin.example", Nickname: "شركة روازن الدولية"},
+		Identity: userdto.Identity{Sub: "355646255235338042", Email: "admin@rawazin.example", Nickname: "شركة روازن الدولية"},
 		Roles:    []string{"ADMIN", "jawaly_ai_super_admin"},
 		IsAdmin:  true,
-		MainAccount: dto.MainAccount{
+		MainAccount: userdto.MainAccount{
 			Allowed: true, SubAccountsCount: 34, AccountID: "1", StatusName: "Active",
 		},
 		IsSubAccount: true,

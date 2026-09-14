@@ -10,9 +10,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/singleflight"
-	"gorm.io/gorm"
 
-	"github.com/4jawaly/identity-gateway/internal/modules/user/dto"
+	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
 	"github.com/4jawaly/identity-gateway/internal/response"
 	"github.com/4jawaly/identity-gateway/internal/types"
 )
@@ -34,13 +33,11 @@ type UserService struct {
 	zitadel  ZitadelClient
 	cache    Cache
 	notifier SyncNotifier
-	repo     UserRepository
 	log      zerolog.Logger
 
 	issuer        string
 	introspectTTL time.Duration
 	inactiveTTL   time.Duration
-	userTTL       time.Duration
 	syncBudget    time.Duration
 	run           func(func())
 
@@ -61,15 +58,12 @@ func WithIssuer(iss string) ServiceOption {
 }
 
 // WithTTLs sets the cache TTLs.
-func WithTTLs(introspect, inactive, user time.Duration) ServiceOption {
-	return func(s *UserService) { s.introspectTTL, s.inactiveTTL, s.userTTL = introspect, inactive, user }
+func WithTTLs(introspect, inactive time.Duration) ServiceOption {
+	return func(s *UserService) { s.introspectTTL, s.inactiveTTL = introspect, inactive }
 }
 
 // WithSyncBudget bounds the detached cache-write + notify work.
 func WithSyncBudget(d time.Duration) ServiceOption { return func(s *UserService) { s.syncBudget = d } }
-
-// WithRepository enables the Postgres-backed reads.
-func WithRepository(r UserRepository) ServiceOption { return func(s *UserService) { s.repo = r } }
 
 // WithLogger sets the logger.
 func WithLogger(l zerolog.Logger) ServiceOption { return func(s *UserService) { s.log = l } }
@@ -78,7 +72,7 @@ func WithLogger(l zerolog.Logger) ServiceOption { return func(s *UserService) { 
 func NewUserService(z ZitadelClient, c Cache, n SyncNotifier, opts ...ServiceOption) *UserService {
 	s := &UserService{
 		zitadel: z, cache: c, notifier: n, log: zerolog.Nop(),
-		introspectTTL: 120 * time.Second, inactiveTTL: 30 * time.Second, userTTL: 300 * time.Second,
+		introspectTTL: 120 * time.Second, inactiveTTL: 30 * time.Second,
 		syncBudget: 500 * time.Millisecond,
 		run:        func(f func()) { go f() },
 	}
@@ -113,14 +107,14 @@ func ValidateToken(token string) error {
 }
 
 type introspectResult struct {
-	report *dto.IntrospectResponse
+	report *userdto.IntrospectResponse
 	err    error
 }
 
 // Introspect validates token and returns the identity report. cached is
 // true when the report came from Redis. A suspended account returns the
 // report together with ACCOUNT_SUSPENDED.
-func (s *UserService) Introspect(ctx context.Context, token string) (*dto.IntrospectResponse, bool, error) {
+func (s *UserService) Introspect(ctx context.Context, token string) (*userdto.IntrospectResponse, bool, error) {
 	if err := ValidateToken(token); err != nil {
 		return nil, false, err
 	}
@@ -134,7 +128,7 @@ func (s *UserService) Introspect(ctx context.Context, token string) (*dto.Intros
 	case StateInactive:
 		return nil, false, response.ErrTokenInactive.With(nil, map[string]any{"reason": "negative_cache"})
 	case StateHit:
-		var report dto.IntrospectResponse
+		var report userdto.IntrospectResponse
 		if uerr := json.Unmarshal(raw, &report); uerr == nil {
 			if !report.IsActive() {
 				return &report, true, response.ErrAccountSuspended
@@ -174,8 +168,8 @@ func (s *UserService) fetch(ctx context.Context, token, h string) introspectResu
 		return introspectResult{err: response.ErrIssuerMismatch.With(nil, map[string]any{"issuer": claims.Iss})}
 	}
 
-	report := dto.ReportFromClaims(claims)
-	payload := dto.SyncPayloadFromClaims(claims, report, s.issuer)
+	report := userdto.ReportFromClaims(claims)
+	payload := userdto.SyncPayloadFromClaims(claims, report, s.issuer)
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return introspectResult{err: fmt.Errorf("encode report: %w", err)}
@@ -217,71 +211,4 @@ func (s *UserService) Authenticate(ctx context.Context, token string) (types.Aut
 		Sub: report.Identity.Sub, Email: report.Identity.Email,
 		Roles: report.Roles, IsAdmin: report.IsAdmin,
 	}, nil
-}
-
-var errNoRepository = errors.New("user reads are not enabled in this binary")
-
-// GetUser returns one user, read-through cached under user:<sub>.
-func (s *UserService) GetUser(ctx context.Context, sub string) (*dto.UserResponse, bool, error) {
-	if s.repo == nil {
-		return nil, false, errNoRepository
-	}
-	if raw, err := s.cache.GetUser(ctx, sub); err != nil {
-		s.log.Warn().Err(err).Msg("user cache read failed")
-	} else if raw != nil {
-		var u dto.UserResponse
-		if json.Unmarshal(raw, &u) == nil {
-			return &u, true, nil
-		}
-	}
-	row, err := s.repo.GetBySub(ctx, sub)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, false, response.ErrNotFound.With(err, map[string]any{"sub": sub})
-		}
-		return nil, false, err
-	}
-	u := dto.UserFromModel(row)
-	if encoded, err := json.Marshal(u); err == nil {
-		if cerr := s.cache.SetUser(ctx, sub, encoded, s.userTTL); cerr != nil {
-			s.log.Warn().Err(cerr).Msg("user cache write failed")
-		}
-	}
-	return &u, false, nil
-}
-
-// ListUsers pages through users.
-func (s *UserService) ListUsers(ctx context.Context, q dto.ListUsersQuery) ([]dto.UserResponse, int64, error) {
-	if s.repo == nil {
-		return nil, 0, errNoRepository
-	}
-	if q.Page < 1 {
-		q.Page = 1
-	}
-	if q.PerPage < 1 || q.PerPage > 100 {
-		q.PerPage = 20
-	}
-	rows, total, err := s.repo.List(ctx, (q.Page-1)*q.PerPage, q.PerPage)
-	if err != nil {
-		return nil, 0, err
-	}
-	return dto.UsersFromModels(rows), total, nil
-}
-
-// ListSubAccounts returns the children of sub. NOT_FOUND when sub is unknown.
-func (s *UserService) ListSubAccounts(ctx context.Context, sub string) ([]dto.UserResponse, error) {
-	if s.repo == nil {
-		return nil, errNoRepository
-	}
-	if _, err := s.repo.GetBySub(ctx, sub); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, response.ErrNotFound.With(err, map[string]any{"sub": sub})
-		}
-		return nil, err
-	}
-	rows, err := s.repo.ListSubAccounts(ctx, sub)
-	if err != nil {
-		return nil, err
-	}
-	return dto.UsersFromModels(rows), nil
 }

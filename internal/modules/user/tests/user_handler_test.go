@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/4jawaly/identity-gateway/internal/middleware"
-	userdto "github.com/4jawaly/identity-gateway/internal/modules/user/dto"
 	userhandler "github.com/4jawaly/identity-gateway/internal/modules/user/handlers"
 	userroute "github.com/4jawaly/identity-gateway/internal/modules/user/routes"
 	"github.com/4jawaly/identity-gateway/internal/modules/user/tests/mocks"

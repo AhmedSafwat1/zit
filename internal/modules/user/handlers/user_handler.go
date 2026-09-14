@@ -33,11 +33,11 @@ func NewUserHandler(svc UserService) *UserHandler { return &UserHandler{svc: svc
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Success		200	{object}	response.Envelope{data=userdto.IntrospectResponse,meta=response.Meta}
-//	@Failure		401	{object}	response.Envelope{error=response.ErrorBody}	"TOKEN_MISSING, TOKEN_INVALID, TOKEN_INACTIVE, ISSUER_MISMATCH"
+//	@Failure		401	{object}	response.Envelope{error=response.ErrorBody}									"TOKEN_MISSING, TOKEN_INVALID, TOKEN_INACTIVE, ISSUER_MISMATCH"
 //	@Failure		403	{object}	response.Envelope{data=userdto.IntrospectResponse,error=response.ErrorBody}	"ACCOUNT_SUSPENDED"
-//	@Failure		429	{object}	response.Envelope{error=response.ErrorBody}	"RATE_LIMITED"
-//	@Failure		503	{object}	response.Envelope{error=response.ErrorBody}	"ZITADEL_UNAVAILABLE"
-//	@Failure		500	{object}	response.Envelope{error=response.ErrorBody}	"INTERNAL_ERROR"
+//	@Failure		429	{object}	response.Envelope{error=response.ErrorBody}									"RATE_LIMITED"
+//	@Failure		503	{object}	response.Envelope{error=response.ErrorBody}									"ZITADEL_UNAVAILABLE"
+//	@Failure		500	{object}	response.Envelope{error=response.ErrorBody}									"INTERNAL_ERROR"
 //	@Router			/users/introspect [post]
 func (h *UserHandler) Introspect(c *gin.Context) {
 	token := middleware.BearerToken(c.GetHeader("Authorization"))

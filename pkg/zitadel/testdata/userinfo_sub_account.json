@@ -1,0 +1,17 @@
+{
+  "sub": "355646999999999999",
+  "iss": "https://zauth.4ja.org/",
+  "email": "child@rawazin.example",
+  "email_verified": false,
+  "nickname": "فرع جدة",
+  "urn:zitadel:iam:org:project:roles": ["USER", "USER", "REPORTS"],
+  "urn:zitadel:iam:user:metadata": {
+    "account_id": "Nzc=",
+    "status_name": "QWN0aXZl",
+    "sub_accounts_count": "MA==",
+    "add_sub_account_allowed": "MA==",
+    "sub_account": "eyJtYWluX2FjY291bnRzIjogWyIzNTU2NDYzNjg5MzQ1MjcxOTUiLCAzNTU2NDY3NTUwMjg1OTkwMDNdfQ==",
+    "unpadded": "aGVsbG8",
+    "not_base64": "***not base64***"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "identity": {
+    "sub": "355646255235338042",
+    "email": "admin@rawazin.example",
+    "nickname": "شركة روازن الدولية"
+  },
+  "roles": ["ADMIN", "jawaly_ai_super_admin"],
+  "is_admin": true,
+  "main_account": {
+    "allowed": true,
+    "sub_accounts_count": 34,
+    "account_id": "1",
+    "status_name": "Active"
+  },
+  "is_sub_account": true,
+  "sub_account_of": ["355646368934527195", "355646755028599003"]
+}

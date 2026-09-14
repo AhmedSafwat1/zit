@@ -1,0 +1,12 @@
+{
+  "sub": "355646111111111111",
+  "email": "suspended@rawazin.example",
+  "nickname": "حساب موقوف",
+  "urn:zitadel:iam:org:project:roles": {"USER": {"355646000000000001": "rawazin.zauth.4ja.org"}},
+  "urn:zitadel:iam:user:metadata": {
+    "account_id": "OQ==",
+    "status_name": "U3VzcGVuZGVk",
+    "sub_accounts_count": "MA==",
+    "add_sub_account_allowed": "bm8="
+  }
+}

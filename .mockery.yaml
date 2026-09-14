@@ -1,0 +1,34 @@
+with-expecter: true
+dir: "{{.InterfaceDirRelative}}/../tests/mocks"
+outpkg: mocks
+filename: "{{.InterfaceName}}.go"
+mockname: "{{.InterfaceName}}"
+packages:
+  github.com/4jawaly/identity-gateway/internal/modules/user/services:
+    interfaces:
+      ZitadelClient:
+      SyncNotifier:
+      UserRepository:
+      Cache:
+  github.com/4jawaly/identity-gateway/internal/modules/user/handlers:
+    interfaces:
+      UserService:
+  github.com/4jawaly/identity-gateway/internal/modules/user/jobs/sync_user:
+    config:
+      dir: internal/modules/user/tests/mocks
+    interfaces:
+      Syncer:
+      DedupeCache:
+  github.com/4jawaly/identity-gateway/pkg/queue:
+    config:
+      dir: internal/mocks
+    interfaces:
+      Publisher:
+  github.com/4jawaly/identity-gateway/internal/middleware:
+    config:
+      dir: internal/mocks
+    interfaces:
+      Authenticator:
+resolve-type-alias: false
+disable-version-string: true
+issue-845-fix: true

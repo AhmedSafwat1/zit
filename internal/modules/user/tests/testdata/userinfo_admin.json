@@ -1,0 +1,21 @@
+{
+  "sub": "355646255235338042",
+  "iss": "https://zauth.4ja.org",
+  "email": "admin@rawazin.example",
+  "email_verified": true,
+  "name": "شركة روازن الدولية",
+  "nickname": "شركة روازن الدولية",
+  "preferred_username": "admin@rawazin.example",
+  "urn:zitadel:iam:org:project:roles": {
+    "jawaly_ai_super_admin": {"355646000000000001": "rawazin.zauth.4ja.org"},
+    "ADMIN": {"355646000000000001": "rawazin.zauth.4ja.org"}
+  },
+  "urn:zitadel:iam:user:metadata": {
+    "account_id": "MQ==",
+    "status_name": "QWN0aXZl",
+    "sub_accounts_count": "MzQ=",
+    "add_sub_account_allowed": "eWVz",
+    "account_type_name": "Q29tcGFueQ==",
+    "sub_account": "eyJtYWluX2FjY291bnRzIjogeyJtYWluXzEiOiAiMzU1NjQ2MzY4OTM0NTI3MTk1IiwgIm1haW5fMiI6ICIzNTU2NDY3NTUwMjg1OTkwMDMiLCAibWFpbl8zIjogIjM1NTY0NjM2ODkzNDUyNzE5NSJ9fQ=="
+  }
+}
